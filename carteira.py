@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+from bcb import sgs
 
 from data_loader import load_prices, compute_returns
 
@@ -47,7 +48,7 @@ with col4:
 # =========================
 # 2️⃣ Retornos
 # =========================
-st.header("📈 Retornos")
+st.header("📈 Retornos das ações")
 
 col5, col6 = st.columns(2, vertical_alignment="center")
 
@@ -141,4 +142,105 @@ with col1:
 
     st.plotly_chart(fig, use_container_width=True)
 
+
+
+st.header("Carteira de Markowitz")
+
+
+
+# Frequência inferida automaticamente
+periods_per_year = infer_periods_per_year(returns)
+
+mean_returns = returns.mean() * periods_per_year
+cov_matrix = returns.cov() * periods_per_year
+
+num_portfolios = 10_000
+num_assets = len(returns.columns)
+
+results = np.zeros((3, num_portfolios))
+weights_record = []
+
+for i in range(num_portfolios):
+    weights = np.random.random(num_assets)
+    weights /= np.sum(weights)
+
+    portfolio_return = np.dot(weights, mean_returns)
+    portfolio_vol = np.sqrt(
+        np.dot(weights.T, np.dot(cov_matrix, weights))
+    )
+
+    sharpe = portfolio_return / portfolio_vol
+
+    results[0, i] = portfolio_return
+    results[1, i] = portfolio_vol
+    results[2, i] = sharpe
+    weights_record.append(weights)
+
+
+results_df = pd.DataFrame(
+    results.T,
+    columns=["Retorno", "Risco", "Sharpe"]
+)
+
+weights_df = pd.DataFrame(
+    weights_record,
+    columns=returns.columns
+)
+
+markowitz_df = pd.concat([results_df, weights_df], axis=1)
+
+max_sharpe = markowitz_df.loc[markowitz_df["Sharpe"].idxmax()]
+
+fig = px.scatter(
+    markowitz_df,
+    x="Risco",
+    y="Retorno",
+    color="Sharpe",
+    title="Fronteira Eficiente – Simulação Monte Carlo",
+    color_continuous_scale="Viridis",
+    opacity=0.6
+)
+
+# Destaque da carteira ótima
+fig.add_scatter(
+    x=[max_sharpe["Risco"]],
+    y=[max_sharpe["Retorno"]],
+    mode="markers",
+    marker=dict(size=14, color="red", symbol="star"),
+    name="Sharpe Máximo"
+)
+
+fig.update_layout(
+    plot_bgcolor="#0F172A",
+    paper_bgcolor="#0F172A"
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+st.subheader("🎯 Carteira com Sharpe Máximo")
+
+weights_opt = max_sharpe[returns.columns]
+
+st.dataframe(
+    weights_opt.to_frame("Peso").style.format("{:.2%}"),
+    use_container_width=True
+)
+
+
+st.header("Indice Sharpe")
+
+taxa_livre_de_risco = st.selectbox(
+"Taxa Livre de Risco",
+("cdi","ibovespa"))
+
+if taxa_livre_de_risco == "cdi":
+    rf = sgs.get({"taxa_livre_de_risco": 12}, start = start, end = end)
+    rf
+if taxa_livre_de_risco =="ibovespa":
+    ibovespa = returns
+    returns
+
+
+
 #ADICIONAR O IBOVESPA COMO BENCHMARK PARA OS TOPICOS 
+#correlação da carteira com o ibovespa
