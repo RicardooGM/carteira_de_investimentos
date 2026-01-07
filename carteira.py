@@ -9,6 +9,7 @@ from data_loader import load_prices, compute_returns
 st.set_page_config(page_title="Carteira Quant", layout="wide")
 st.title("📊 App de Análise de Carteira")
 
+
 # =========================
 # 1️⃣ Importação de dados
 # =========================
@@ -146,6 +147,21 @@ with col1:
 
 st.header("Carteira de Markowitz")
 
+st.subheader("⚙️ Parâmetros da Simulação")
+
+rf_annual = st.number_input(
+    "Taxa livre de risco anual (%)",
+    min_value=0.0,
+    max_value=50.0,
+    value=12.0,
+    step=0.5
+) / 100
+
+
+valores1 = st.number_input("valores",step=1000)
+
+
+
 
 
 # Frequência inferida automaticamente
@@ -154,7 +170,7 @@ periods_per_year = infer_periods_per_year(returns)
 mean_returns = returns.mean() * periods_per_year
 cov_matrix = returns.cov() * periods_per_year
 
-num_portfolios = 10_000
+num_portfolios = valores1
 num_assets = len(returns.columns)
 
 results = np.zeros((3, num_portfolios))
@@ -169,11 +185,12 @@ for i in range(num_portfolios):
         np.dot(weights.T, np.dot(cov_matrix, weights))
     )
 
-    sharpe = portfolio_return / portfolio_vol
+    sharpe1 = (portfolio_return - rf_annual) / portfolio_vol
+
 
     results[0, i] = portfolio_return
     results[1, i] = portfolio_vol
-    results[2, i] = sharpe
+    results[2, i] = sharpe1
     weights_record.append(weights)
 
 
@@ -188,8 +205,10 @@ weights_df = pd.DataFrame(
 )
 
 markowitz_df = pd.concat([results_df, weights_df], axis=1)
+min_var = markowitz_df.loc[markowitz_df["Risco"].idxmin()]
 
-max_sharpe = markowitz_df.loc[markowitz_df["Sharpe"].idxmax()]
+
+max_sharpe1 = markowitz_df.loc[markowitz_df["Sharpe"].idxmax()]
 
 fig = px.scatter(
     markowitz_df,
@@ -203,28 +222,143 @@ fig = px.scatter(
 
 # Destaque da carteira ótima
 fig.add_scatter(
-    x=[max_sharpe["Risco"]],
-    y=[max_sharpe["Retorno"]],
+    x=[max_sharpe1["Risco"]],
+    y=[max_sharpe1["Retorno"]],
     mode="markers",
     marker=dict(size=14, color="red", symbol="star"),
     name="Sharpe Máximo"
 )
 
-fig.update_layout(
-    plot_bgcolor="#0F172A",
-    paper_bgcolor="#0F172A"
+fig.add_scatter(
+x=[min_var["Risco"]],
+y=[min_var["Retorno"]],
+mode="markers",
+marker=dict(size=14, color="blue", symbol="diamond"),
+name="Mínima Variância"
 )
+
+
+#fig.update_layout(
+    #plot_bgcolor="#0F172A",
+    #paper_bgcolor="#0F172A")
 
 st.plotly_chart(fig, use_container_width=True)
 
-st.subheader("🎯 Carteira com Sharpe Máximo")
+weights_opt = max_sharpe1[returns.columns]
 
-weights_opt = max_sharpe[returns.columns]
+weights_min_var = min_var[returns.columns]
 
-st.dataframe(
-    weights_opt.to_frame("Peso").style.format("{:.2%}"),
-    use_container_width=True
-)
+portfolio_returns = returns @ weights_opt
+
+
+col1, col2 = st.columns(2)
+
+with col1:
+
+    st.subheader("🎯 Carteira com Sharpe Máximo")
+    weights_df_plot = weights_opt.reset_index()
+    weights_df_plot.columns = ["Ativo", "Peso"]
+
+    fig_pie = px.pie(
+        weights_df_plot,
+        names="Ativo",
+        values="Peso",
+        hole=0.5
+    )
+
+    fig_pie.update_traces(
+        textposition="inside",
+        textinfo="percent+label"
+    )
+
+
+    st.plotly_chart(fig_pie, use_container_width=True)
+
+    st.metric(
+        label="Sharpe Ratio",
+        value=f"{max_sharpe1['Sharpe']:.2f}"
+    )
+
+with col2:
+    st.subheader("🛡️ Carteira de Mínima Variância")
+    weights_min_var_plot = weights_min_var.reset_index()
+    weights_min_var_plot.columns = ["Ativo", "Peso"]
+
+    fig_pie_min = px.pie(
+        weights_min_var_plot,
+        names="Ativo",
+        values="Peso",
+        hole=0.5
+    )
+
+    fig_pie_min.update_traces(
+        textposition="inside",
+        textinfo="percent+label"
+    )
+
+    st.plotly_chart(fig_pie_min, use_container_width=True)
+
+    st.metric(
+        label="Sharpe Ratio",
+        value=f"{min_var["Sharpe"]:.2f}"
+    )
+
+portfolio_cum_return = (1 + portfolio_returns).cumprod() - 1
+
+col1, col2 = st.columns(2)
+
+with col1:
+
+    st.subheader("📈 Retorno Acumulado da Carteira Ótima")
+
+    st.line_chart(portfolio_cum_return)
+
+    st.metric(
+        label="Retorno Acumulado da Carteira",
+        value=f"{portfolio_cum_return.iloc[-1]:.2%}"
+    )
+
+with col2:
+
+    st.subheader("📈 Retorno Acumulado – Carteira vs Ativos")
+
+    df_plot = retorno_acumulado.copy()
+    df_plot["Carteira Ótima"] = portfolio_cum_return
+
+    st.line_chart(df_plot)
+
+
+
+col1, col2 = st.columns(2)
+
+with col1:
+
+    st.subheader("📈 Retorno Acumulado da Carteira MV")
+    portfolio_returns_min = returns @ weights_min_var
+    portfolio_cum_return_min = (1 + portfolio_returns_min).cumprod() - 1
+    st.line_chart(portfolio_cum_return_min)
+
+    st.metric(
+        label="Retorno Acumulado da Carteira",
+        value=f"{portfolio_cum_return_min.iloc[-1]:.2%}"
+    )
+
+with col2:
+    st.subheader("📈 Retorno Acumulado – Carteira vs Ativos")
+    df_plot = retorno_acumulado.copy()
+    df_plot["Mínima Variância"] = portfolio_cum_return_min
+    st.line_chart(df_plot)
+
+
+
+
+
+
+
+
+
+
+
 
 
 st.header("Indice Sharpe")
